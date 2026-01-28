@@ -124,7 +124,7 @@ A single newline-delimited JSON object:
 | `env` | No | Additional environment variables (dangerous vars like `LD_PRELOAD` and `PATH` are blocked) |
 | `cwd` | No | Working directory for the command |
 
-Requests are limited to 1 MB.
+Requests are limited to 10 MB.
 
 ### Response (server → client)
 
@@ -211,7 +211,7 @@ This service runs as root and executes arbitrary shell commands. Its security mo
 - **UID authorization**: Only the configured system user may connect. All other connections are rejected before any command processing.
 - **Socket permissions**: The socket file is created as `root:<vito-group>` with mode `0660`, providing filesystem-level access control in addition to `SO_PEERCRED`.
 - **Environment variable blocklist**: Clients cannot set dangerous variables (`LD_PRELOAD`, `LD_LIBRARY_PATH`, `PATH`, `BASH_ENV`, `IFS`, and all `LD_*`/`BASH_FUNC_*` prefixes).
-- **Request size limit**: Requests are capped at 1 MB to prevent memory exhaustion.
+- **Request size limit**: Requests are capped at 10 MB to prevent memory exhaustion.
 - **Connection limit**: Concurrent connections are bounded (default: 100) to prevent resource exhaustion.
 - **Graceful process management**: On cancellation, child processes receive `SIGTERM` (not `SIGKILL`) with a 5-second grace period, and signals are sent to the entire process group to prevent orphans.
 - **Audit logging**: Every command is logged with the peer's UID, PID, command string, working directory, and exit code.

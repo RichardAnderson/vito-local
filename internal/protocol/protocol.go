@@ -7,8 +7,8 @@ import (
 	"io"
 )
 
-// MaxRequestSize is the maximum allowed size for a single request line (1 MB).
-const MaxRequestSize = 1 << 20
+// MaxRequestSize is the maximum allowed size for a single request line (10 MB).
+const MaxRequestSize = 10 << 20
 
 // Request represents a command execution request from a client.
 type Request struct {
