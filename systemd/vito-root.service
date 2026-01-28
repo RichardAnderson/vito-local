@@ -1,0 +1,33 @@
+[Unit]
+Description=Vito Root Service
+Documentation=https://github.com/RichardAnderson/vito-local
+After=network.target
+Requires=vito-root.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vito-root-service -user vito -log-json
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+# Security hardening
+# NoNewPrivileges=false is required because executed commands may need to
+# set capabilities or change user context (e.g., su, sudo within commands).
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+
+# Resource limits
+LimitNPROC=4096
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

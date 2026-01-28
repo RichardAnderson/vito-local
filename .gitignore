@@ -1,0 +1,9 @@
+bin/
+*.sock
+*.exe
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
