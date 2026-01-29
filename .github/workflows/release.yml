@@ -43,7 +43,7 @@ jobs:
 
       - name: Package amd64
         run: |
-          tar czf vito-root-service-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz \
+          tar czf vito-root-service-linux-amd64.tar.gz \
             -C bin vito-root-service-linux-amd64 \
             --transform='s/vito-root-service-linux-amd64/vito-root-service/' \
             -C "$GITHUB_WORKSPACE" \
@@ -54,7 +54,7 @@ jobs:
 
       - name: Package arm64
         run: |
-          tar czf vito-root-service-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz \
+          tar czf vito-root-service-linux-arm64.tar.gz \
             -C bin vito-root-service-linux-arm64 \
             --transform='s/vito-root-service-linux-arm64/vito-root-service/' \
             -C "$GITHUB_WORKSPACE" \
