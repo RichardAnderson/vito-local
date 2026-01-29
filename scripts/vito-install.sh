@@ -24,7 +24,8 @@ export PHP_VERSION="8.4.17"
 export NODE_VERSION="20.18.1"
 export REDIS_VERSION="7.4.2"
 export COMPOSER_VERSION="2.8.4"
-export VITO_PORT=3000
+DEFAULT_VITO_PORT=3000
+DEFAULT_VITO_DOMAIN="localhost"
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -62,7 +63,6 @@ echo ""
 
 # Generate defaults
 DEFAULT_V_PASSWORD=$(openssl rand -base64 12)
-DEFAULT_VITO_APP_URL="http://localhost:${VITO_PORT}"
 DEFAULT_V_ADMIN_EMAIL="admin@vito.local"
 DEFAULT_V_ADMIN_PASSWORD=$(openssl rand -base64 12)
 
@@ -74,12 +74,29 @@ if [[ -z "${V_PASSWORD}" ]]; then
 fi
 echo "  SSH Password: ${V_PASSWORD}"
 
-# Application URL
-if [[ -z "${VITO_APP_URL}" ]]; then
-    printf "Application URL [%s]: " "${DEFAULT_VITO_APP_URL}"
-    read VITO_APP_URL </dev/tty
-    export VITO_APP_URL=${VITO_APP_URL:-$DEFAULT_VITO_APP_URL}
+# Domain
+if [[ -z "${VITO_DOMAIN}" ]]; then
+    printf "Domain (without http/https) [%s]: " "${DEFAULT_VITO_DOMAIN}"
+    read VITO_DOMAIN </dev/tty
+    export VITO_DOMAIN=${VITO_DOMAIN:-$DEFAULT_VITO_DOMAIN}
 fi
+echo "  Domain: ${VITO_DOMAIN}"
+
+# Port
+if [[ -z "${VITO_PORT}" ]]; then
+    printf "Port (must be >= 1024 for non-root) [%s]: " "${DEFAULT_VITO_PORT}"
+    read VITO_PORT </dev/tty
+    export VITO_PORT=${VITO_PORT:-$DEFAULT_VITO_PORT}
+fi
+# Validate port is non-privileged
+if [[ "${VITO_PORT}" -lt 1024 ]]; then
+    echo "Error: Port must be >= 1024 to run as non-root user"
+    exit 1
+fi
+echo "  Port: ${VITO_PORT}"
+
+# Construct APP_URL
+export VITO_APP_URL="http://${VITO_DOMAIN}:${VITO_PORT}"
 echo "  App URL: ${VITO_APP_URL}"
 
 # Admin email
@@ -319,118 +336,6 @@ logfile ${VITO_LOGS}/redis.log
 pidfile ${VITO_DATA}/redis.pid
 EOF
 
-# =============================================================================
-# Install Nginx (self-contained static build)
-# =============================================================================
-NGINX_VERSION="1.27.3"
-if needs_install "nginx" "${NGINX_VERSION}" "${VITO_BIN}/nginx"; then
-    log "Installing Nginx ${NGINX_VERSION}..."
-    NGINX_URL="https://github.com/nginx/nginx/archive/refs/tags/release-${NGINX_VERSION}.tar.gz"
-    NGINX_TMP="/tmp/nginx.tar.gz"
-    NGINX_BUILD="/tmp/nginx-release-${NGINX_VERSION}"
-
-    rm -rf "${VITO_LOCAL}/nginx" "${NGINX_BUILD}"
-    download "${NGINX_URL}" "${NGINX_TMP}"
-    tar -xzf "${NGINX_TMP}" -C /tmp
-
-    # Install required build deps for nginx
-    apt-get install -y libpcre3-dev zlib1g-dev libssl-dev > /dev/null 2>&1
-
-    cd "${NGINX_BUILD}"
-    log "Building Nginx... this can take a few minutes"
-    auto/configure \
-        --prefix="${VITO_LOCAL}/nginx" \
-        --sbin-path="${VITO_BIN}/nginx" \
-        --conf-path="${VITO_LOCAL}/nginx/nginx.conf" \
-        --error-log-path="${VITO_LOGS}/nginx-error.log" \
-        --http-log-path="${VITO_LOGS}/nginx-access.log" \
-        --pid-path="${VITO_DATA}/nginx.pid" \
-        --with-http_ssl_module \
-        --with-http_v2_module \
-        --with-http_realip_module \
-        --without-http_gzip_module > /dev/null 2>&1
-    make -j"$(nproc)" > /dev/null 2>&1
-    make install > /dev/null 2>&1
-    cd /
-    rm -rf "${NGINX_TMP}" "${NGINX_BUILD}"
-    mark_installed "nginx" "${NGINX_VERSION}"
-else
-    log "Nginx ${NGINX_VERSION} already installed, skipping..."
-fi
-
-# Create Nginx configuration (always ensure configs are up to date)
-mkdir -p "${VITO_LOCAL}/nginx/sites-enabled"
-cat > "${VITO_LOCAL}/nginx/nginx.conf" <<EOF
-worker_processes auto;
-pid ${VITO_DATA}/nginx.pid;
-error_log ${VITO_LOGS}/nginx-error.log;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    include       ${VITO_LOCAL}/nginx/mime.types;
-    default_type  application/octet-stream;
-
-    log_format main '\$remote_addr - \$remote_user [\$time_local] "\$request" '
-                    '\$status \$body_bytes_sent "\$http_referer" '
-                    '"\$http_user_agent"';
-
-    access_log ${VITO_LOGS}/nginx-access.log main;
-
-    sendfile on;
-    tcp_nopush on;
-    tcp_nodelay on;
-    keepalive_timeout 65;
-    types_hash_max_size 2048;
-
-    client_max_body_size 100M;
-
-    include ${VITO_LOCAL}/nginx/sites-enabled/*;
-}
-EOF
-
-# Create Vito site configuration (reverse proxy to FrankenPHP)
-cat > "${VITO_LOCAL}/nginx/sites-enabled/vito.conf" <<EOF
-server {
-    listen ${VITO_PORT};
-    listen [::]:${VITO_PORT};
-    server_name _;
-
-    root ${VITO_APP}/public;
-    index index.php;
-
-    charset utf-8;
-
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-Content-Type-Options "nosniff";
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-    }
-
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-
-    error_page 404 /index.php;
-
-    location ~ \.php\$ {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
-    }
-
-    location ~ /\.(?!well-known).* {
-        deny all;
-    }
-}
-EOF
 
 # =============================================================================
 # Configure Firewall
@@ -541,32 +446,10 @@ Type=simple
 User=vito
 Group=vito
 WorkingDirectory=${VITO_APP}
-ExecStart=${VITO_BIN}/frankenphp php-server --root ${VITO_APP}/public --listen 127.0.0.1:8080
+ExecStart=${VITO_BIN}/frankenphp php-server --root ${VITO_APP}/public --listen 0.0.0.0:${VITO_PORT}
 Restart=always
 RestartSec=5
 Environment=PATH=${VITO_BIN}:${VITO_LOCAL}/node/bin:/usr/local/bin:/usr/bin:/bin
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Nginx service
-cat > /etc/systemd/system/vito-nginx.service <<EOF
-[Unit]
-Description=Vito Nginx Server
-After=network.target vito-php.service
-Requires=vito-php.service
-
-[Service]
-Type=forking
-User=vito
-Group=vito
-PIDFile=${VITO_DATA}/nginx.pid
-ExecStart=${VITO_BIN}/nginx -c ${VITO_LOCAL}/nginx/nginx.conf
-ExecReload=/bin/kill -s HUP \$MAINPID
-ExecStop=/bin/kill -s QUIT \$MAINPID
-Restart=always
-RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -595,14 +478,13 @@ EOF
 
 # Reload systemd and enable/start services
 systemctl daemon-reload
-systemctl enable vito-redis vito-php vito-nginx vito-worker
+systemctl enable vito-redis vito-php vito-worker
 
 log "Starting services..."
 systemctl start vito-redis
 sleep 2
 systemctl start vito-php
 sleep 2
-systemctl start vito-nginx
 systemctl start vito-worker
 
 # =============================================================================
@@ -630,7 +512,6 @@ echo ""
 echo "Services:"
 echo "  systemctl status vito-redis"
 echo "  systemctl status vito-php"
-echo "  systemctl status vito-nginx"
 echo "  systemctl status vito-worker"
 echo ""
 echo "Firewall Status:"
