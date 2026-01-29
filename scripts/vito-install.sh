@@ -140,17 +140,20 @@ needs_install() {
 
     # Always rebuild if user requested
     if [[ "${REBUILD_DEPS}" == "Y" ]]; then
+        log "  -> ${name}: rebuild requested by user"
         return 0
     fi
 
     # Check if binary/directory exists
     if [[ ! -e "${check_path}" ]]; then
+        log "  -> ${name}: not found at ${check_path}"
         return 0
     fi
 
     # Check version file
     local version_file="${VITO_VERSIONS}/${name}.version"
     if [[ ! -f "${version_file}" ]]; then
+        log "  -> ${name}: no version file at ${version_file}"
         return 0
     fi
 
@@ -158,6 +161,7 @@ needs_install() {
     local installed_version
     installed_version=$(cat "${version_file}")
     if [[ "${installed_version}" != "${version}" ]]; then
+        log "  -> ${name}: version mismatch (installed: ${installed_version}, want: ${version})"
         return 0
     fi
 
@@ -190,7 +194,7 @@ if ! id "vito" &>/dev/null; then
 fi
 
 # Create directory structure
-mkdir -p "${VITO_BIN}" "${VITO_DATA}" "${VITO_LOGS}"
+mkdir -p "${VITO_BIN}" "${VITO_DATA}" "${VITO_LOGS}" "${VITO_VERSIONS}"
 mkdir -p "${VITO_HOME}/.ssh"
 chown -R vito:vito "${VITO_HOME}"
 
@@ -537,7 +541,7 @@ Type=simple
 User=vito
 Group=vito
 WorkingDirectory=${VITO_APP}
-ExecStart=${VITO_BIN}/frankenphp php-server --listen 127.0.0.1:8080
+ExecStart=${VITO_BIN}/frankenphp php-server --root ${VITO_APP}/public --listen 127.0.0.1:8080
 Restart=always
 RestartSec=5
 Environment=PATH=${VITO_BIN}:${VITO_LOCAL}/node/bin:/usr/local/bin:/usr/bin:/bin
