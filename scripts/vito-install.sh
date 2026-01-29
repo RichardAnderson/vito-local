@@ -20,6 +20,7 @@ echo "
 export VITO_VERSION="3.x"
 export VITO_LOCAL_REPO="RichardAnderson/vito-local"
 export FRANKENPHP_VERSION="1.11.1"
+export PHP_VERSION="8.4.12"
 export NODE_VERSION="20.18.1"
 export REDIS_VERSION="7.4.2"
 export COMPOSER_VERSION="2.8.4"
@@ -162,30 +163,15 @@ FRANKENPHP_URL="https://github.com/php/frankenphp/releases/download/v${FRANKENPH
 download "${FRANKENPHP_URL}" "${VITO_BIN}/frankenphp"
 chmod +x "${VITO_BIN}/frankenphp"
 
-# Create php wrapper script so composer and artisan work
-# FrankenPHP's php-cli doesn't handle -d options the same way as regular PHP
-cat > "${VITO_BIN}/php" <<'PHPWRAPPER'
-#!/bin/bash
-SCRIPT_DIR="$(dirname "$0")"
-ARGS=()
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -d)
-            # Skip -d and its value (PHP ini directive)
-            shift 2 || shift
-            ;;
-        -d*)
-            # Skip -d with attached value like -dallow_url_fopen=1
-            shift
-            ;;
-        *)
-            ARGS+=("$1")
-            shift
-            ;;
-    esac
-done
-exec "$SCRIPT_DIR/frankenphp" php-cli "${ARGS[@]}"
-PHPWRAPPER
+# =============================================================================
+# Install Static PHP CLI (for composer, artisan, etc.)
+# =============================================================================
+log "Installing PHP CLI ${PHP_VERSION}..."
+PHP_URL="https://dl.static-php.dev/static-php-cli/common/php-${PHP_VERSION}-cli-linux-${FRANKENPHP_ARCH}.tar.gz"
+PHP_TMP="/tmp/php-cli.tar.gz"
+download "${PHP_URL}" "${PHP_TMP}"
+tar -xzf "${PHP_TMP}" -C "${VITO_BIN}"
+rm -f "${PHP_TMP}"
 chmod +x "${VITO_BIN}/php"
 
 # =============================================================================
@@ -225,7 +211,8 @@ rm -rf "${VITO_LOCAL}/redis" "${REDIS_BUILD}"
 download "${REDIS_URL}" "${REDIS_TMP}"
 tar -xzf "${REDIS_TMP}" -C /tmp
 cd "${REDIS_BUILD}"
-make -j"$(nproc)" PREFIX="${VITO_LOCAL}/redis" install
+log "Building Redis... this can take a few minutes"
+make -j"$(nproc)" PREFIX="${VITO_LOCAL}/redis" install > /dev/null 2>&1
 cd /
 rm -rf "${REDIS_TMP}" "${REDIS_BUILD}"
 
@@ -257,9 +244,10 @@ download "${NGINX_URL}" "${NGINX_TMP}"
 tar -xzf "${NGINX_TMP}" -C /tmp
 
 # Install required build deps for nginx
-apt-get install -y libpcre3-dev zlib1g-dev libssl-dev
+apt-get install -y libpcre3-dev zlib1g-dev libssl-dev > /dev/null 2>&1
 
 cd "${NGINX_BUILD}"
+log "Building Nginx... this can take a few minutes"
 auto/configure \
     --prefix="${VITO_LOCAL}/nginx" \
     --sbin-path="${VITO_BIN}/nginx" \
@@ -270,9 +258,9 @@ auto/configure \
     --with-http_ssl_module \
     --with-http_v2_module \
     --with-http_realip_module \
-    --without-http_gzip_module
-make -j"$(nproc)"
-make install
+    --without-http_gzip_module > /dev/null 2>&1
+make -j"$(nproc)" > /dev/null 2>&1
+make install > /dev/null 2>&1
 cd /
 rm -rf "${NGINX_TMP}" "${NGINX_BUILD}"
 
