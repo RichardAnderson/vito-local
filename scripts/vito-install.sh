@@ -392,6 +392,10 @@ sed -i "s|^APP_URL=.*|APP_URL=${VITO_APP_URL}|" "${VITO_APP}/.env"
 
 # Initialize database
 touch "${VITO_APP}/storage/database.sqlite"
+
+# Fix ownership for files created as root
+chown -R vito:vito "${VITO_APP}"
+
 su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan key:generate"
 su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan storage:link"
 su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan migrate --force"
@@ -401,6 +405,7 @@ su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan user:create Vito ${V_ADMIN_EMA
 openssl genpkey -algorithm RSA -out "${VITO_APP}/storage/ssh-private.pem"
 chmod 600 "${VITO_APP}/storage/ssh-private.pem"
 ssh-keygen -y -f "${VITO_APP}/storage/ssh-private.pem" > "${VITO_APP}/storage/ssh-public.key"
+chown vito:vito "${VITO_APP}/storage/ssh-private.pem" "${VITO_APP}/storage/ssh-public.key"
 
 # Optimize
 su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan optimize"
