@@ -56,7 +56,7 @@ else
 fi
 
 # Download release
-TARBALL="vito-root-service-${VERSION}-linux-${GOARCH}.tar.gz"
+TARBALL="vito-root-service-linux-${GOARCH}.tar.gz"
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/${VERSION}/${TARBALL}"
 
 TMPDIR="$(mktemp -d)"
