@@ -20,7 +20,7 @@ echo "
 export VITO_VERSION="3.x"
 export VITO_LOCAL_REPO="RichardAnderson/vito-local"
 export FRANKENPHP_VERSION="1.11.1"
-export PHP_VERSION="8.4.12"
+export PHP_VERSION="8.4.17"
 export NODE_VERSION="20.18.1"
 export REDIS_VERSION="7.4.2"
 export COMPOSER_VERSION="2.8.4"
@@ -167,7 +167,8 @@ chmod +x "${VITO_BIN}/frankenphp"
 # Install Static PHP CLI (for composer, artisan, etc.)
 # =============================================================================
 log "Installing PHP CLI ${PHP_VERSION}..."
-PHP_URL="https://dl.static-php.dev/static-php-cli/common/php-${PHP_VERSION}-cli-linux-${FRANKENPHP_ARCH}.tar.gz"
+# Using 'bulk' build which includes intl, redis, and other required extensions
+PHP_URL="https://dl.static-php.dev/static-php-cli/bulk/php-${PHP_VERSION}-cli-linux-${FRANKENPHP_ARCH}.tar.gz"
 PHP_TMP="/tmp/php-cli.tar.gz"
 download "${PHP_URL}" "${PHP_TMP}"
 tar -xzf "${PHP_TMP}" -C "${VITO_BIN}"
