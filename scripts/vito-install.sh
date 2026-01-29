@@ -98,6 +98,20 @@ if [[ -z "${V_ADMIN_PASSWORD}" ]]; then
 fi
 echo "  Admin Password: ${V_ADMIN_PASSWORD}"
 
+# Rebuild dependencies
+if [[ -z "${REBUILD_DEPS}" ]]; then
+    printf "Rebuild all dependencies? (y/N) [N]: "
+    read REBUILD_DEPS </dev/tty
+    REBUILD_DEPS=${REBUILD_DEPS:-N}
+fi
+if [[ "${REBUILD_DEPS}" =~ ^[Yy]$ ]]; then
+    export REBUILD_DEPS="Y"
+    echo "  Rebuild Dependencies: Yes"
+else
+    export REBUILD_DEPS="N"
+    echo "  Rebuild Dependencies: No (will skip already installed)"
+fi
+
 echo ""
 
 # =============================================================================
@@ -112,6 +126,51 @@ download() {
     local dest="$2"
     log "Downloading: ${url}"
     curl -fsSL "${url}" -o "${dest}"
+}
+
+# Version tracking directory
+VITO_VERSIONS="${VITO_LOCAL}/versions"
+
+# Check if a dependency needs to be installed/rebuilt
+# Returns 0 (true) if install needed, 1 (false) if already installed
+needs_install() {
+    local name="$1"
+    local version="$2"
+    local check_path="$3"
+
+    # Always rebuild if user requested
+    if [[ "${REBUILD_DEPS}" == "Y" ]]; then
+        return 0
+    fi
+
+    # Check if binary/directory exists
+    if [[ ! -e "${check_path}" ]]; then
+        return 0
+    fi
+
+    # Check version file
+    local version_file="${VITO_VERSIONS}/${name}.version"
+    if [[ ! -f "${version_file}" ]]; then
+        return 0
+    fi
+
+    # Compare versions
+    local installed_version
+    installed_version=$(cat "${version_file}")
+    if [[ "${installed_version}" != "${version}" ]]; then
+        return 0
+    fi
+
+    # Already installed at correct version
+    return 1
+}
+
+# Mark a dependency as installed
+mark_installed() {
+    local name="$1"
+    local version="$2"
+    mkdir -p "${VITO_VERSIONS}"
+    echo "${version}" > "${VITO_VERSIONS}/${name}.version"
 }
 
 # =============================================================================
@@ -158,70 +217,95 @@ rm -f "${VITO_LOCAL_TMP}"
 # =============================================================================
 # Install FrankenPHP (self-contained PHP + web server)
 # =============================================================================
-log "Installing FrankenPHP ${FRANKENPHP_VERSION}..."
-FRANKENPHP_URL="https://github.com/php/frankenphp/releases/download/v${FRANKENPHP_VERSION}/frankenphp-linux-${FRANKENPHP_ARCH}"
-download "${FRANKENPHP_URL}" "${VITO_BIN}/frankenphp"
-chmod +x "${VITO_BIN}/frankenphp"
+if needs_install "frankenphp" "${FRANKENPHP_VERSION}" "${VITO_BIN}/frankenphp"; then
+    log "Installing FrankenPHP ${FRANKENPHP_VERSION}..."
+    FRANKENPHP_URL="https://github.com/php/frankenphp/releases/download/v${FRANKENPHP_VERSION}/frankenphp-linux-${FRANKENPHP_ARCH}"
+    download "${FRANKENPHP_URL}" "${VITO_BIN}/frankenphp"
+    chmod +x "${VITO_BIN}/frankenphp"
+    mark_installed "frankenphp" "${FRANKENPHP_VERSION}"
+else
+    log "FrankenPHP ${FRANKENPHP_VERSION} already installed, skipping..."
+fi
 
 # =============================================================================
 # Install Static PHP CLI (for composer, artisan, etc.)
 # =============================================================================
-log "Installing PHP CLI ${PHP_VERSION}..."
-# Using 'bulk' build which includes intl, redis, and other required extensions
-PHP_URL="https://dl.static-php.dev/static-php-cli/bulk/php-${PHP_VERSION}-cli-linux-${FRANKENPHP_ARCH}.tar.gz"
-PHP_TMP="/tmp/php-cli.tar.gz"
-download "${PHP_URL}" "${PHP_TMP}"
-tar -xzf "${PHP_TMP}" -C "${VITO_BIN}"
-rm -f "${PHP_TMP}"
-chmod +x "${VITO_BIN}/php"
+if needs_install "php" "${PHP_VERSION}" "${VITO_BIN}/php"; then
+    log "Installing PHP CLI ${PHP_VERSION}..."
+    # Using 'bulk' build which includes intl, redis, and other required extensions
+    PHP_URL="https://dl.static-php.dev/static-php-cli/bulk/php-${PHP_VERSION}-cli-linux-${FRANKENPHP_ARCH}.tar.gz"
+    PHP_TMP="/tmp/php-cli.tar.gz"
+    download "${PHP_URL}" "${PHP_TMP}"
+    tar -xzf "${PHP_TMP}" -C "${VITO_BIN}"
+    rm -f "${PHP_TMP}"
+    chmod +x "${VITO_BIN}/php"
+    mark_installed "php" "${PHP_VERSION}"
+else
+    log "PHP CLI ${PHP_VERSION} already installed, skipping..."
+fi
 
 # =============================================================================
 # Install Node.js (self-contained)
 # =============================================================================
-log "Installing Node.js ${NODE_VERSION}..."
-NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
-NODE_TMP="/tmp/node.tar.xz"
-rm -rf "${VITO_LOCAL}/node"
-download "${NODE_URL}" "${NODE_TMP}"
-tar -xJf "${NODE_TMP}" -C "${VITO_LOCAL}"
-mv "${VITO_LOCAL}/node-v${NODE_VERSION}-linux-${NODE_ARCH}" "${VITO_LOCAL}/node"
-rm -f "${NODE_TMP}"
+if needs_install "node" "${NODE_VERSION}" "${VITO_LOCAL}/node"; then
+    log "Installing Node.js ${NODE_VERSION}..."
+    NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
+    NODE_TMP="/tmp/node.tar.xz"
+    rm -rf "${VITO_LOCAL}/node"
+    download "${NODE_URL}" "${NODE_TMP}"
+    tar -xJf "${NODE_TMP}" -C "${VITO_LOCAL}"
+    mv "${VITO_LOCAL}/node-v${NODE_VERSION}-linux-${NODE_ARCH}" "${VITO_LOCAL}/node"
+    rm -f "${NODE_TMP}"
 
-# Symlink node binaries
-ln -sf "${VITO_LOCAL}/node/bin/node" "${VITO_BIN}/node"
-ln -sf "${VITO_LOCAL}/node/bin/npm" "${VITO_BIN}/npm"
-ln -sf "${VITO_LOCAL}/node/bin/npx" "${VITO_BIN}/npx"
+    # Symlink node binaries
+    ln -sf "${VITO_LOCAL}/node/bin/node" "${VITO_BIN}/node"
+    ln -sf "${VITO_LOCAL}/node/bin/npm" "${VITO_BIN}/npm"
+    ln -sf "${VITO_LOCAL}/node/bin/npx" "${VITO_BIN}/npx"
+    mark_installed "node" "${NODE_VERSION}"
+else
+    log "Node.js ${NODE_VERSION} already installed, skipping..."
+fi
 
 # =============================================================================
 # Install Composer (self-contained)
 # =============================================================================
-log "Installing Composer ${COMPOSER_VERSION}..."
-COMPOSER_URL="https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar"
-download "${COMPOSER_URL}" "${VITO_BIN}/composer"
-chmod +x "${VITO_BIN}/composer"
+if needs_install "composer" "${COMPOSER_VERSION}" "${VITO_BIN}/composer"; then
+    log "Installing Composer ${COMPOSER_VERSION}..."
+    COMPOSER_URL="https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar"
+    download "${COMPOSER_URL}" "${VITO_BIN}/composer"
+    chmod +x "${VITO_BIN}/composer"
+    mark_installed "composer" "${COMPOSER_VERSION}"
+else
+    log "Composer ${COMPOSER_VERSION} already installed, skipping..."
+fi
 
 # =============================================================================
 # Install Redis (compiled locally, self-contained)
 # =============================================================================
-log "Installing Redis ${REDIS_VERSION}..."
-REDIS_URL="https://github.com/redis/redis/archive/refs/tags/${REDIS_VERSION}.tar.gz"
-REDIS_TMP="/tmp/redis.tar.gz"
-REDIS_BUILD="/tmp/redis-${REDIS_VERSION}"
+if needs_install "redis" "${REDIS_VERSION}" "${VITO_LOCAL}/redis"; then
+    log "Installing Redis ${REDIS_VERSION}..."
+    REDIS_URL="https://github.com/redis/redis/archive/refs/tags/${REDIS_VERSION}.tar.gz"
+    REDIS_TMP="/tmp/redis.tar.gz"
+    REDIS_BUILD="/tmp/redis-${REDIS_VERSION}"
 
-rm -rf "${VITO_LOCAL}/redis" "${REDIS_BUILD}"
-download "${REDIS_URL}" "${REDIS_TMP}"
-tar -xzf "${REDIS_TMP}" -C /tmp
-cd "${REDIS_BUILD}"
-log "Building Redis... this can take a few minutes"
-make -j"$(nproc)" PREFIX="${VITO_LOCAL}/redis" install > /dev/null 2>&1
-cd /
-rm -rf "${REDIS_TMP}" "${REDIS_BUILD}"
+    rm -rf "${VITO_LOCAL}/redis" "${REDIS_BUILD}"
+    download "${REDIS_URL}" "${REDIS_TMP}"
+    tar -xzf "${REDIS_TMP}" -C /tmp
+    cd "${REDIS_BUILD}"
+    log "Building Redis... this can take a few minutes"
+    make -j"$(nproc)" PREFIX="${VITO_LOCAL}/redis" install > /dev/null 2>&1
+    cd /
+    rm -rf "${REDIS_TMP}" "${REDIS_BUILD}"
 
-# Symlink redis binaries
-ln -sf "${VITO_LOCAL}/redis/bin/redis-server" "${VITO_BIN}/redis-server"
-ln -sf "${VITO_LOCAL}/redis/bin/redis-cli" "${VITO_BIN}/redis-cli"
+    # Symlink redis binaries
+    ln -sf "${VITO_LOCAL}/redis/bin/redis-server" "${VITO_BIN}/redis-server"
+    ln -sf "${VITO_LOCAL}/redis/bin/redis-cli" "${VITO_BIN}/redis-cli"
+    mark_installed "redis" "${REDIS_VERSION}"
+else
+    log "Redis ${REDIS_VERSION} already installed, skipping..."
+fi
 
-# Create Redis config
+# Create Redis config (always ensure it exists)
 cat > "${VITO_DATA}/redis.conf" <<EOF
 bind 127.0.0.1
 port 6379
@@ -234,38 +318,43 @@ EOF
 # =============================================================================
 # Install Nginx (self-contained static build)
 # =============================================================================
-log "Installing Nginx..."
-# Using nginx static build from nginx-portable or similar
-NGINX_URL="https://github.com/nginx/nginx/archive/refs/tags/release-1.27.3.tar.gz"
-NGINX_TMP="/tmp/nginx.tar.gz"
-NGINX_BUILD="/tmp/nginx-release-1.27.3"
+NGINX_VERSION="1.27.3"
+if needs_install "nginx" "${NGINX_VERSION}" "${VITO_BIN}/nginx"; then
+    log "Installing Nginx ${NGINX_VERSION}..."
+    NGINX_URL="https://github.com/nginx/nginx/archive/refs/tags/release-${NGINX_VERSION}.tar.gz"
+    NGINX_TMP="/tmp/nginx.tar.gz"
+    NGINX_BUILD="/tmp/nginx-release-${NGINX_VERSION}"
 
-rm -rf "${VITO_LOCAL}/nginx" "${NGINX_BUILD}"
-download "${NGINX_URL}" "${NGINX_TMP}"
-tar -xzf "${NGINX_TMP}" -C /tmp
+    rm -rf "${VITO_LOCAL}/nginx" "${NGINX_BUILD}"
+    download "${NGINX_URL}" "${NGINX_TMP}"
+    tar -xzf "${NGINX_TMP}" -C /tmp
 
-# Install required build deps for nginx
-apt-get install -y libpcre3-dev zlib1g-dev libssl-dev > /dev/null 2>&1
+    # Install required build deps for nginx
+    apt-get install -y libpcre3-dev zlib1g-dev libssl-dev > /dev/null 2>&1
 
-cd "${NGINX_BUILD}"
-log "Building Nginx... this can take a few minutes"
-auto/configure \
-    --prefix="${VITO_LOCAL}/nginx" \
-    --sbin-path="${VITO_BIN}/nginx" \
-    --conf-path="${VITO_LOCAL}/nginx/nginx.conf" \
-    --error-log-path="${VITO_LOGS}/nginx-error.log" \
-    --http-log-path="${VITO_LOGS}/nginx-access.log" \
-    --pid-path="${VITO_DATA}/nginx.pid" \
-    --with-http_ssl_module \
-    --with-http_v2_module \
-    --with-http_realip_module \
-    --without-http_gzip_module > /dev/null 2>&1
-make -j"$(nproc)" > /dev/null 2>&1
-make install > /dev/null 2>&1
-cd /
-rm -rf "${NGINX_TMP}" "${NGINX_BUILD}"
+    cd "${NGINX_BUILD}"
+    log "Building Nginx... this can take a few minutes"
+    auto/configure \
+        --prefix="${VITO_LOCAL}/nginx" \
+        --sbin-path="${VITO_BIN}/nginx" \
+        --conf-path="${VITO_LOCAL}/nginx/nginx.conf" \
+        --error-log-path="${VITO_LOGS}/nginx-error.log" \
+        --http-log-path="${VITO_LOGS}/nginx-access.log" \
+        --pid-path="${VITO_DATA}/nginx.pid" \
+        --with-http_ssl_module \
+        --with-http_v2_module \
+        --with-http_realip_module \
+        --without-http_gzip_module > /dev/null 2>&1
+    make -j"$(nproc)" > /dev/null 2>&1
+    make install > /dev/null 2>&1
+    cd /
+    rm -rf "${NGINX_TMP}" "${NGINX_BUILD}"
+    mark_installed "nginx" "${NGINX_VERSION}"
+else
+    log "Nginx ${NGINX_VERSION} already installed, skipping..."
+fi
 
-# Create Nginx configuration
+# Create Nginx configuration (always ensure configs are up to date)
 mkdir -p "${VITO_LOCAL}/nginx/sites-enabled"
 cat > "${VITO_LOCAL}/nginx/nginx.conf" <<EOF
 worker_processes auto;
@@ -415,33 +504,38 @@ su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan optimize"
 # =============================================================================
 log "Creating systemd services..."
 
-mkdir -p "${VITO_HOME}/.config/systemd/user"
+# Fix ownership before creating services
+chown -R vito:vito "${VITO_HOME}"
 
-# Redis service
-cat > "${VITO_HOME}/.config/systemd/user/vito-redis.service" <<EOF
+# Redis service (system-level, runs as vito user)
+cat > /etc/systemd/system/vito-redis.service <<EOF
 [Unit]
 Description=Vito Redis Server
 After=network.target
 
 [Service]
 Type=simple
+User=vito
+Group=vito
 ExecStart=${VITO_BIN}/redis-server ${VITO_DATA}/redis.conf
 Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 
 # FrankenPHP service (PHP application server)
-cat > "${VITO_HOME}/.config/systemd/user/vito-php.service" <<EOF
+cat > /etc/systemd/system/vito-php.service <<EOF
 [Unit]
 Description=Vito FrankenPHP Server
-After=vito-redis.service
+After=network.target vito-redis.service
 Requires=vito-redis.service
 
 [Service]
 Type=simple
+User=vito
+Group=vito
 WorkingDirectory=${VITO_APP}
 ExecStart=${VITO_BIN}/frankenphp php-server --listen 127.0.0.1:8080
 Restart=always
@@ -449,18 +543,20 @@ RestartSec=5
 Environment=PATH=${VITO_BIN}:${VITO_LOCAL}/node/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 
 # Nginx service
-cat > "${VITO_HOME}/.config/systemd/user/vito-nginx.service" <<EOF
+cat > /etc/systemd/system/vito-nginx.service <<EOF
 [Unit]
 Description=Vito Nginx Server
-After=vito-php.service
+After=network.target vito-php.service
 Requires=vito-php.service
 
 [Service]
 Type=forking
+User=vito
+Group=vito
 PIDFile=${VITO_DATA}/nginx.pid
 ExecStart=${VITO_BIN}/nginx -c ${VITO_LOCAL}/nginx/nginx.conf
 ExecReload=/bin/kill -s HUP \$MAINPID
@@ -469,18 +565,20 @@ Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 
 # Horizon worker service
-cat > "${VITO_HOME}/.config/systemd/user/vito-worker.service" <<EOF
+cat > /etc/systemd/system/vito-worker.service <<EOF
 [Unit]
 Description=Vito Horizon Worker
-After=vito-redis.service vito-php.service
+After=network.target vito-redis.service vito-php.service
 Requires=vito-redis.service
 
 [Service]
 Type=simple
+User=vito
+Group=vito
 WorkingDirectory=${VITO_APP}
 ExecStart=${VITO_BIN}/php ${VITO_APP}/artisan horizon
 Restart=always
@@ -488,24 +586,20 @@ RestartSec=5
 Environment=PATH=${VITO_BIN}:${VITO_LOCAL}/node/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 
-# Fix ownership
-chown -R vito:vito "${VITO_HOME}"
+# Reload systemd and enable/start services
+systemctl daemon-reload
+systemctl enable vito-redis vito-php vito-nginx vito-worker
 
-# Enable lingering for vito user (allows user services to run without login)
-loginctl enable-linger vito
-
-# Enable and start services
-su - vito -c "systemctl --user daemon-reload"
-su - vito -c "systemctl --user enable vito-redis vito-php vito-nginx vito-worker"
-su - vito -c "systemctl --user start vito-redis"
+log "Starting services..."
+systemctl start vito-redis
 sleep 2
-su - vito -c "systemctl --user start vito-php"
+systemctl start vito-php
 sleep 2
-su - vito -c "systemctl --user start vito-nginx"
-su - vito -c "systemctl --user start vito-worker"
+systemctl start vito-nginx
+systemctl start vito-worker
 
 # =============================================================================
 # Setup Cron Jobs
@@ -529,11 +623,11 @@ echo "  SSH Password:   ${V_PASSWORD}"
 echo "  Admin Email:    ${V_ADMIN_EMAIL}"
 echo "  Admin Password: ${V_ADMIN_PASSWORD}"
 echo ""
-echo "Services (run as vito user):"
-echo "  systemctl --user status vito-redis"
-echo "  systemctl --user status vito-php"
-echo "  systemctl --user status vito-nginx"
-echo "  systemctl --user status vito-worker"
+echo "Services:"
+echo "  systemctl status vito-redis"
+echo "  systemctl status vito-php"
+echo "  systemctl status vito-nginx"
+echo "  systemctl status vito-worker"
 echo ""
 echo "Firewall Status:"
 ufw status | grep -E "^${VITO_PORT}|^22"
