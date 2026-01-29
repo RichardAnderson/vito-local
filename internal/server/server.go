@@ -72,7 +72,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("shutting down server")
 
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
 
 	// Wait for in-flight connections with context timeout
@@ -109,7 +109,7 @@ func (s *Server) createListener() (*net.UnixListener, error) {
 			if f == nil {
 				return nil, fmt.Errorf("failed to create file from fd 3")
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 
 			l, err := net.FileListener(f)
 			if err != nil {
@@ -118,7 +118,7 @@ func (s *Server) createListener() (*net.UnixListener, error) {
 
 			ul, ok := l.(*net.UnixListener)
 			if !ok {
-				l.Close()
+				_ = l.Close()
 				return nil, fmt.Errorf("systemd fd is not a Unix socket")
 			}
 
@@ -179,9 +179,9 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			)
 			if creds != nil {
 				resp := errorResponseBytes("unauthorized: connection rejected")
-				conn.Write(resp)
+				_, _ = conn.Write(resp)
 			}
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 
@@ -200,8 +200,8 @@ func (s *Server) acceptLoop(ctx context.Context) {
 				slog.Int("peer_pid", int(creds.PID)),
 			)
 			resp := errorResponseBytes("server at maximum capacity")
-			conn.Write(resp)
-			conn.Close()
+			_, _ = conn.Write(resp)
+			_ = conn.Close()
 		}
 	}
 }
