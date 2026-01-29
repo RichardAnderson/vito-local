@@ -163,9 +163,28 @@ download "${FRANKENPHP_URL}" "${VITO_BIN}/frankenphp"
 chmod +x "${VITO_BIN}/frankenphp"
 
 # Create php wrapper script so composer and artisan work
+# FrankenPHP's php-cli doesn't handle -d options the same way as regular PHP
 cat > "${VITO_BIN}/php" <<'PHPWRAPPER'
 #!/bin/bash
-exec "$(dirname "$0")/frankenphp" php-cli "$@"
+SCRIPT_DIR="$(dirname "$0")"
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d)
+            # Skip -d and its value (PHP ini directive)
+            shift 2 || shift
+            ;;
+        -d*)
+            # Skip -d with attached value like -dallow_url_fopen=1
+            shift
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+exec "$SCRIPT_DIR/frankenphp" php-cli "${ARGS[@]}"
 PHPWRAPPER
 chmod +x "${VITO_BIN}/php"
 
