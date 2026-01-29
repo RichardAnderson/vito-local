@@ -17,7 +17,8 @@ echo "
 # =============================================================================
 # Configuration
 # =============================================================================
-export VITO_VERSION="3.x"
+export VITO_REPO="https://github.com/RichardAnderson/vito"
+export VITO_BRANCH="feat/local-install"
 export VITO_LOCAL_REPO="RichardAnderson/vito-local"
 export FRANKENPHP_VERSION="1.11.1"
 export PHP_VERSION="8.4.17"
@@ -564,18 +565,18 @@ EOF
 }
 
 setup_vito_app() {
-    log "Cloning Vito repository..."
-    local vito_repo="https://github.com/vitodeploy/vito.git"
+    log "Cloning Vito repository from ${VITO_REPO} (branch: ${VITO_BRANCH})..."
 
     rm -rf "${VITO_APP}"
     git config --global core.fileMode false
-    git clone -b "${VITO_VERSION}" "${vito_repo}" "${VITO_APP}"
+    git clone -b "${VITO_BRANCH}" "${VITO_REPO}.git" "${VITO_APP}"
     cd "${VITO_APP}" || { log_error "Failed to cd to ${VITO_APP}"; return 1; }
 
-    # Checkout latest tag
+    # Checkout latest tag if available
     local latest_tag
-    latest_tag=$(git tag -l --merged "${VITO_VERSION}" --sort=-v:refname | head -n 1)
+    latest_tag=$(git tag -l --merged "${VITO_BRANCH}" --sort=-v:refname | head -n 1)
     if [[ -n "${latest_tag}" ]]; then
+        log "Checking out tag ${latest_tag}..."
         git checkout "${latest_tag}"
     fi
 
@@ -721,6 +722,46 @@ setup_cron() {
     log "Setting up cron jobs..."
     # Remove existing vito schedule entry and add fresh one (prevents duplicates)
     (crontab -u vito -l 2>/dev/null | grep -v "artisan schedule:run" || true; echo "* * * * * ${VITO_BIN}/php ${VITO_APP}/artisan schedule:run >> /dev/null 2>&1") | crontab -u vito -
+}
+
+create_local_server() {
+    log "Creating local server entry in Vito..."
+
+    # Detect the server's primary IP address
+    local server_ip
+    server_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I | awk '{print $1}')
+
+    if [[ -z "${server_ip}" ]]; then
+        log_error "Could not detect server IP address, skipping local server creation"
+        return 0
+    fi
+
+    # Build the list of open ports
+    local ports="22,${VITO_PORT}"
+    if [[ "${ENABLE_SSL}" == "Y" ]]; then
+        ports="${ports},80"
+    fi
+
+    # Determine if nginx is installed
+    local nginx_installed="N"
+    if [[ "${ENABLE_SSL}" == "Y" ]]; then
+        nginx_installed="Y"
+    fi
+
+    # SSL flag
+    local ssl_enabled="${ENABLE_SSL}"
+
+    # Create the local server (user ID 1 is the admin we just created)
+    su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan servers:create-local '${server_ip}' \
+        --ports='${ports}' \
+        --nginx='${nginx_installed}' \
+        --name='localhost' \
+        --user=1 \
+        --domain='${VITO_DOMAIN}' \
+        --web-port='${VITO_PORT}' \
+        --ssl='${ssl_enabled}'"
+
+    log "Local server 'localhost' created with IP ${server_ip}"
 }
 
 # =============================================================================
@@ -879,6 +920,7 @@ setup_vito_app
 configure_systemd
 start_services
 setup_cron
+create_local_server
 
 # =============================================================================
 # Final Summary
@@ -923,6 +965,10 @@ echo "  App:      ${VITO_APP}"
 echo "  Binaries: ${VITO_BIN}"
 echo "  Logs:     ${VITO_LOGS}"
 echo "  Data:     ${VITO_DATA}"
+echo ""
+echo "Local Server:"
+echo "  A local server entry has been created in Vito."
+echo "  You can manage it from the Vito dashboard."
 echo ""
 
 # Save credentials to a file for reference (readable only by root)
