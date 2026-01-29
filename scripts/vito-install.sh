@@ -19,7 +19,7 @@ echo "
 # =============================================================================
 export VITO_VERSION="3.x"
 export VITO_LOCAL_REPO="RichardAnderson/vito-local"
-export FRANKENPHP_VERSION="1.4.4"
+export FRANKENPHP_VERSION="1.11.1"
 export NODE_VERSION="20.18.1"
 export REDIS_VERSION="7.4.2"
 export COMPOSER_VERSION="2.8.4"
@@ -31,10 +31,12 @@ case "$ARCH" in
     x86_64)
         ARCH_SUFFIX="amd64"
         NODE_ARCH="x64"
+        FRANKENPHP_ARCH="x86_64"
         ;;
     aarch64|arm64)
         ARCH_SUFFIX="arm64"
         NODE_ARCH="arm64"
+        FRANKENPHP_ARCH="aarch64"
         ;;
     *)
         echo "Unsupported architecture: $ARCH"
@@ -156,7 +158,7 @@ rm -f "${VITO_LOCAL_TMP}"
 # Install FrankenPHP (self-contained PHP + web server)
 # =============================================================================
 log "Installing FrankenPHP ${FRANKENPHP_VERSION}..."
-FRANKENPHP_URL="https://github.com/dunglas/frankenphp/releases/download/v${FRANKENPHP_VERSION}/frankenphp-linux-${ARCH_SUFFIX}"
+FRANKENPHP_URL="https://github.com/php/frankenphp/releases/download/v${FRANKENPHP_VERSION}/frankenphp-linux-${FRANKENPHP_ARCH}"
 download "${FRANKENPHP_URL}" "${VITO_BIN}/frankenphp"
 chmod +x "${VITO_BIN}/frankenphp"
 
