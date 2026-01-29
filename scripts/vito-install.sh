@@ -18,6 +18,7 @@ echo "
 # Configuration
 # =============================================================================
 export VITO_VERSION="3.x"
+export VITO_LOCAL_REPO="RichardAnderson/vito-local"
 export FRANKENPHP_VERSION="1.4.4"
 export NODE_VERSION="20.18.1"
 export REDIS_VERSION="7.4.2"
@@ -138,7 +139,7 @@ su - vito -c "ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa" <<<y 2>/dev/null || true
 # Install vito-local-service (root service)
 # =============================================================================
 log "Installing vito-local-service..."
-VITO_LOCAL_RELEASE_URL="https://github.com/vitodeploy/vito-local/releases/latest/download/vito-root-service-linux-${ARCH_SUFFIX}.tar.gz"
+VITO_LOCAL_RELEASE_URL="https://github.com/${VITO_LOCAL_REPO}/releases/latest/download/vito-root-service-linux-${ARCH_SUFFIX}.tar.gz"
 VITO_LOCAL_TMP="/tmp/vito-local-service.tar.gz"
 
 download "${VITO_LOCAL_RELEASE_URL}" "${VITO_LOCAL_TMP}"
