@@ -244,21 +244,44 @@ is_valid_ssl_domain() {
 # =============================================================================
 install_vito_local_service() {
     log "Installing vito-local-service..."
+
+    local install_dir="/usr/local/bin"
+    local systemd_dir="/etc/systemd/system"
+    local binary_name="vito-root-service"
     local release_url="https://github.com/${VITO_LOCAL_REPO}/releases/latest/download/vito-root-service-linux-${ARCH_SUFFIX}.tar.gz"
     local tmp_file="/tmp/vito-local-service.tar.gz"
+    local tmp_dir="/tmp/vito-local-service"
 
+    # Download and extract
     download "${release_url}" "${tmp_file}"
-    tar -xzf "${tmp_file}" -C /tmp
+    rm -rf "${tmp_dir}"
+    mkdir -p "${tmp_dir}"
+    tar -xzf "${tmp_file}" -C "${tmp_dir}"
 
-    # Run the vito-local-service installer
-    if [[ -f /tmp/scripts/install.sh ]]; then
-        chmod +x /tmp/scripts/install.sh
-        /tmp/scripts/install.sh
-    elif [[ -f /tmp/install.sh ]]; then
-        chmod +x /tmp/install.sh
-        /tmp/install.sh
+    # Stop existing service if running
+    if systemctl is-active --quiet vito-root.service 2>/dev/null; then
+        log "Stopping existing vito-root service..."
+        systemctl stop vito-root.socket vito-root.service || true
     fi
-    rm -f "${tmp_file}"
+
+    # Install binary
+    log "Installing ${binary_name} to ${install_dir}..."
+    install -m 0755 "${tmp_dir}/${binary_name}" "${install_dir}/${binary_name}"
+
+    # Install systemd units
+    log "Installing systemd units..."
+    install -m 0644 "${tmp_dir}/systemd/vito-root.socket" "${systemd_dir}/"
+    install -m 0644 "${tmp_dir}/systemd/vito-root.service" "${systemd_dir}/"
+
+    # Reload and enable
+    systemctl daemon-reload
+    systemctl enable vito-root.socket
+    systemctl start vito-root.socket
+
+    # Cleanup
+    rm -rf "${tmp_file}" "${tmp_dir}"
+
+    log "vito-local-service installed successfully"
 }
 
 install_frankenphp() {
