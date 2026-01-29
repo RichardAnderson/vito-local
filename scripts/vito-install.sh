@@ -162,6 +162,13 @@ FRANKENPHP_URL="https://github.com/php/frankenphp/releases/download/v${FRANKENPH
 download "${FRANKENPHP_URL}" "${VITO_BIN}/frankenphp"
 chmod +x "${VITO_BIN}/frankenphp"
 
+# Create php wrapper script so composer and artisan work
+cat > "${VITO_BIN}/php" <<'PHPWRAPPER'
+#!/bin/bash
+exec "$(dirname "$0")/frankenphp" php-cli "$@"
+PHPWRAPPER
+chmod +x "${VITO_BIN}/php"
+
 # =============================================================================
 # Install Node.js (self-contained)
 # =============================================================================
@@ -366,7 +373,7 @@ EOF
 # Install PHP dependencies using FrankenPHP's embedded PHP
 log "Installing Composer dependencies..."
 chown -R vito:vito "${VITO_HOME}"
-su - vito -c "cd ${VITO_APP} && COMPOSER_ALLOW_SUPERUSER=1 ${VITO_BIN}/frankenphp php-cli ${VITO_BIN}/composer install --no-dev --optimize-autoloader"
+su - vito -c "cd ${VITO_APP} && PATH=${VITO_BIN}:${VITO_LOCAL}/node/bin:\$PATH COMPOSER_ALLOW_SUPERUSER=1 ${VITO_BIN}/composer install --no-dev --optimize-autoloader"
 
 # Configure environment
 cp "${VITO_APP}/.env.prod" "${VITO_APP}/.env"
@@ -374,10 +381,10 @@ sed -i "s|^APP_URL=.*|APP_URL=${VITO_APP_URL}|" "${VITO_APP}/.env"
 
 # Initialize database
 touch "${VITO_APP}/storage/database.sqlite"
-su - vito -c "${VITO_BIN}/frankenphp php-cli ${VITO_APP}/artisan key:generate"
-su - vito -c "${VITO_BIN}/frankenphp php-cli ${VITO_APP}/artisan storage:link"
-su - vito -c "${VITO_BIN}/frankenphp php-cli ${VITO_APP}/artisan migrate --force"
-su - vito -c "${VITO_BIN}/frankenphp php-cli ${VITO_APP}/artisan user:create Vito ${V_ADMIN_EMAIL} ${V_ADMIN_PASSWORD}"
+su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan key:generate"
+su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan storage:link"
+su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan migrate --force"
+su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan user:create Vito ${V_ADMIN_EMAIL} ${V_ADMIN_PASSWORD}"
 
 # Generate SSH keys for the application
 openssl genpkey -algorithm RSA -out "${VITO_APP}/storage/ssh-private.pem"
@@ -385,7 +392,7 @@ chmod 600 "${VITO_APP}/storage/ssh-private.pem"
 ssh-keygen -y -f "${VITO_APP}/storage/ssh-private.pem" > "${VITO_APP}/storage/ssh-public.key"
 
 # Optimize
-su - vito -c "${VITO_BIN}/frankenphp php-cli ${VITO_APP}/artisan optimize"
+su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan optimize"
 
 # =============================================================================
 # Create systemd services (user-level)
@@ -459,7 +466,7 @@ Requires=vito-redis.service
 [Service]
 Type=simple
 WorkingDirectory=${VITO_APP}
-ExecStart=${VITO_BIN}/frankenphp php-cli ${VITO_APP}/artisan horizon
+ExecStart=${VITO_BIN}/php ${VITO_APP}/artisan horizon
 Restart=always
 RestartSec=5
 Environment=PATH=${VITO_BIN}:${VITO_LOCAL}/node/bin:/usr/local/bin:/usr/bin:/bin
@@ -488,7 +495,7 @@ su - vito -c "systemctl --user start vito-worker"
 # Setup Cron Jobs
 # =============================================================================
 log "Setting up cron jobs..."
-(crontab -u vito -l 2>/dev/null || true; echo "* * * * * ${VITO_BIN}/frankenphp php-cli ${VITO_APP}/artisan schedule:run >> /dev/null 2>&1") | crontab -u vito -
+(crontab -u vito -l 2>/dev/null || true; echo "* * * * * ${VITO_BIN}/php ${VITO_APP}/artisan schedule:run >> /dev/null 2>&1") | crontab -u vito -
 
 # =============================================================================
 # Final Summary
