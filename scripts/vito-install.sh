@@ -595,12 +595,17 @@ setup_vito_app() {
     git clone -b "${VITO_BRANCH}" "${VITO_REPO}.git" "${VITO_APP}"
     cd "${VITO_APP}" || { log_error "Failed to cd to ${VITO_APP}"; return 1; }
 
-    # Checkout latest tag if available
-    local latest_tag
-    latest_tag=$(git tag -l --merged "${VITO_BRANCH}" --sort=-v:refname | head -n 1)
-    if [[ -n "${latest_tag}" ]]; then
-        log "Checking out tag ${latest_tag}..."
-        git checkout "${latest_tag}"
+    # Only checkout latest tag for release branches (e.g., "3.x", "main", "master")
+    # Feature branches (e.g., "feat/local-install") stay on branch HEAD
+    if [[ "${VITO_BRANCH}" =~ ^[0-9]+\.x$ ]] || [[ "${VITO_BRANCH}" == "main" ]] || [[ "${VITO_BRANCH}" == "master" ]]; then
+        local latest_tag
+        latest_tag=$(git tag -l --merged "${VITO_BRANCH}" --sort=-v:refname | head -n 1)
+        if [[ -n "${latest_tag}" ]]; then
+            log "Checking out tag ${latest_tag}..."
+            git checkout "${latest_tag}"
+        fi
+    else
+        log "Staying on branch ${VITO_BRANCH} (feature branch)"
     fi
 
     # Set permissions
