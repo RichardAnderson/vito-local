@@ -194,6 +194,7 @@ chmod +x "${VITO_BIN}/php"
 log "Installing Node.js ${NODE_VERSION}..."
 NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
 NODE_TMP="/tmp/node.tar.xz"
+rm -rf "${VITO_LOCAL}/node"
 download "${NODE_URL}" "${NODE_TMP}"
 tar -xJf "${NODE_TMP}" -C "${VITO_LOCAL}"
 mv "${VITO_LOCAL}/node-v${NODE_VERSION}-linux-${NODE_ARCH}" "${VITO_LOCAL}/node"
@@ -220,6 +221,7 @@ REDIS_URL="https://github.com/redis/redis/archive/refs/tags/${REDIS_VERSION}.tar
 REDIS_TMP="/tmp/redis.tar.gz"
 REDIS_BUILD="/tmp/redis-${REDIS_VERSION}"
 
+rm -rf "${VITO_LOCAL}/redis" "${REDIS_BUILD}"
 download "${REDIS_URL}" "${REDIS_TMP}"
 tar -xzf "${REDIS_TMP}" -C /tmp
 cd "${REDIS_BUILD}"
@@ -250,6 +252,7 @@ NGINX_URL="https://github.com/nginx/nginx/archive/refs/tags/release-1.27.3.tar.g
 NGINX_TMP="/tmp/nginx.tar.gz"
 NGINX_BUILD="/tmp/nginx-release-1.27.3"
 
+rm -rf "${VITO_LOCAL}/nginx" "${NGINX_BUILD}"
 download "${NGINX_URL}" "${NGINX_TMP}"
 tar -xzf "${NGINX_TMP}" -C /tmp
 
