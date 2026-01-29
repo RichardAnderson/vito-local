@@ -52,34 +52,49 @@ export VITO_APP="${VITO_HOME}/vito"
 # =============================================================================
 # Input Collection
 # =============================================================================
+echo "Please provide the following configuration values."
+echo "Press Enter to accept the default value shown in brackets."
+echo ""
+
+# Generate defaults
+DEFAULT_V_PASSWORD=$(openssl rand -base64 12)
+DEFAULT_VITO_APP_URL="http://localhost:${VITO_PORT}"
+DEFAULT_V_ADMIN_EMAIL="admin@vito.local"
+DEFAULT_V_ADMIN_PASSWORD=$(openssl rand -base64 12)
+
+# SSH Password for vito user
 if [[ -z "${V_PASSWORD}" ]]; then
-    export V_PASSWORD=$(openssl rand -base64 12)
+    printf "SSH password for vito user [%s]: " "${DEFAULT_V_PASSWORD}"
+    read V_PASSWORD </dev/tty
+    export V_PASSWORD=${V_PASSWORD:-$DEFAULT_V_PASSWORD}
 fi
+echo "  SSH Password: ${V_PASSWORD}"
 
+# Application URL
 if [[ -z "${VITO_APP_URL}" ]]; then
-    export DEFAULT_VITO_APP_URL="http://localhost:${VITO_PORT}"
-    read -p "Enter the APP_URL [${DEFAULT_VITO_APP_URL}]: " VITO_APP_URL
+    printf "Application URL [%s]: " "${DEFAULT_VITO_APP_URL}"
+    read VITO_APP_URL </dev/tty
     export VITO_APP_URL=${VITO_APP_URL:-$DEFAULT_VITO_APP_URL}
-    echo "APP_URL is set to: ${VITO_APP_URL}"
 fi
+echo "  App URL: ${VITO_APP_URL}"
 
+# Admin email
 if [[ -z "${V_ADMIN_EMAIL}" ]]; then
-    read -p "Enter admin's email address: " V_ADMIN_EMAIL
+    printf "Admin email address [%s]: " "${DEFAULT_V_ADMIN_EMAIL}"
+    read V_ADMIN_EMAIL </dev/tty
+    export V_ADMIN_EMAIL=${V_ADMIN_EMAIL:-$DEFAULT_V_ADMIN_EMAIL}
 fi
+echo "  Admin Email: ${V_ADMIN_EMAIL}"
 
-if [[ -z "${V_ADMIN_EMAIL}" ]]; then
-    echo "Error: V_ADMIN_EMAIL is required."
-    exit 1
-fi
-
+# Admin password
 if [[ -z "${V_ADMIN_PASSWORD}" ]]; then
-    read -p "Enter a password for the admin user: " V_ADMIN_PASSWORD
+    printf "Admin password [%s]: " "${DEFAULT_V_ADMIN_PASSWORD}"
+    read V_ADMIN_PASSWORD </dev/tty
+    export V_ADMIN_PASSWORD=${V_ADMIN_PASSWORD:-$DEFAULT_V_ADMIN_PASSWORD}
 fi
+echo "  Admin Password: ${V_ADMIN_PASSWORD}"
 
-if [[ -z "${V_ADMIN_PASSWORD}" ]]; then
-    echo "Error: V_ADMIN_PASSWORD is required."
-    exit 1
-fi
+echo ""
 
 # =============================================================================
 # Helper Functions
