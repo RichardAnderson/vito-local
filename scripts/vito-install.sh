@@ -563,15 +563,10 @@ setup_vito_user() {
         # Use SHA-512 hash instead of MD5 (-6 instead of -1)
         useradd -m -s /bin/bash -p "$(openssl passwd -6 "${V_PASSWORD}")" vito
 
-        # Limited sudo access - only for vito services
+        # Full sudo access for vito user (required for server management)
         cat > /etc/sudoers.d/vito <<EOF
-# Vito user can manage vito services without password
-vito ALL=(ALL) NOPASSWD: /bin/systemctl start vito-*
-vito ALL=(ALL) NOPASSWD: /bin/systemctl stop vito-*
-vito ALL=(ALL) NOPASSWD: /bin/systemctl restart vito-*
-vito ALL=(ALL) NOPASSWD: /bin/systemctl status vito-*
-vito ALL=(ALL) NOPASSWD: /bin/systemctl enable vito-*
-vito ALL=(ALL) NOPASSWD: /bin/systemctl disable vito-*
+# Vito user can run any command without password
+vito ALL=(ALL) NOPASSWD: ALL
 EOF
         chmod 440 /etc/sudoers.d/vito
     fi

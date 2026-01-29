@@ -16,14 +16,9 @@ TimeoutStopSec=30
 # NoNewPrivileges=false is required because executed commands may need to
 # set capabilities or change user context (e.g., su, sudo within commands).
 NoNewPrivileges=false
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/run
-PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-RestrictNamespaces=true
 
 # Resource limits
 LimitNPROC=4096
