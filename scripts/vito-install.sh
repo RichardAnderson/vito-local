@@ -53,7 +53,7 @@ export VITO_LOCAL="${VITO_HOME}/.local"
 export VITO_BIN="${VITO_LOCAL}/bin"
 export VITO_DATA="${VITO_LOCAL}/data"
 export VITO_LOGS="${VITO_LOCAL}/logs"
-export VITO_APP="${VITO_HOME}/vito"
+export VITO_APP="${VITO_HOME}/www"
 export VITO_VERSIONS="${VITO_LOCAL}/versions"
 
 # =============================================================================
@@ -638,8 +638,8 @@ EOF
     su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan storage:link"
     su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan migrate --force"
 
-    # Create admin user using environment variables to avoid password in process list
-    su - vito -c "V_ADMIN_EMAIL='${V_ADMIN_EMAIL}' V_ADMIN_PASSWORD='${V_ADMIN_PASSWORD}' ${VITO_BIN}/php ${VITO_APP}/artisan user:create Vito \"\${V_ADMIN_EMAIL}\" \"\${V_ADMIN_PASSWORD}\""
+    # Create admin user
+    su - vito -c "${VITO_BIN}/php ${VITO_APP}/artisan user:create administrator ${V_ADMIN_EMAIL} ${V_ADMIN_PASSWORD}"
 
     # Generate SSH keys for the application
     openssl genpkey -algorithm RSA -out "${VITO_APP}/storage/ssh-private.pem"
@@ -811,8 +811,8 @@ echo ""
 
 # Generate defaults
 DEFAULT_V_PASSWORD=$(openssl rand -base64 12)
-DEFAULT_V_ADMIN_EMAIL="admin@vito.local"
-DEFAULT_V_ADMIN_PASSWORD=$(openssl rand -base64 12)
+DEFAULT_V_ADMIN_EMAIL="test@test.com"
+DEFAULT_V_ADMIN_PASSWORD="password"
 
 # SSH Password for vito user
 if [[ -z "${V_PASSWORD}" ]]; then

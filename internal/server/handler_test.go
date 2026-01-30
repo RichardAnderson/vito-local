@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"vito-local/internal/config"
 	"vito-local/internal/protocol"
 )
 
@@ -47,12 +48,22 @@ func setupTestSocket(t *testing.T) (server *net.UnixConn, client *net.UnixConn, 
 	}
 }
 
+// testServer creates a minimal server instance for handler tests.
+func testServer(t *testing.T, logger *slog.Logger) *Server {
+	t.Helper()
+	cfg := &config.Config{
+		MaxConnections: 10,
+	}
+	return New(cfg, logger, WithVersion("test-version"))
+}
+
 func TestHandleConnection_Echo(t *testing.T) {
 	serverConn, clientConn, cleanup := setupTestSocket(t)
 	defer cleanup()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	creds := &PeerCredentials{UID: uint32(os.Getuid()), PID: int32(os.Getpid())}
+	srv := testServer(t, logger)
 
 	// Send request from client
 	req := protocol.Request{Command: "echo hello"}
@@ -63,7 +74,7 @@ func TestHandleConnection_Echo(t *testing.T) {
 	// Handle connection on server side
 	done := make(chan struct{})
 	go func() {
-		handleConnection(context.Background(), serverConn, creds, logger, 0)
+		handleConnection(context.Background(), serverConn, creds, srv, logger, 0)
 		close(done)
 	}()
 
@@ -120,13 +131,14 @@ func TestHandleConnection_InvalidJSON(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	creds := &PeerCredentials{UID: uint32(os.Getuid()), PID: int32(os.Getpid())}
+	srv := testServer(t, logger)
 
 	// Send invalid JSON
 	clientConn.Write([]byte("not json\n"))
 
 	done := make(chan struct{})
 	go func() {
-		handleConnection(context.Background(), serverConn, creds, logger, 0)
+		handleConnection(context.Background(), serverConn, creds, srv, logger, 0)
 		close(done)
 	}()
 
@@ -144,13 +156,15 @@ func TestHandleConnection_InvalidJSON(t *testing.T) {
 	<-done
 }
 
-func TestHandleConnection_EmptyCommand(t *testing.T) {
+func TestHandleConnection_EmptyRequest(t *testing.T) {
 	serverConn, clientConn, cleanup := setupTestSocket(t)
 	defer cleanup()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	creds := &PeerCredentials{UID: uint32(os.Getuid()), PID: int32(os.Getpid())}
+	srv := testServer(t, logger)
 
+	// Empty request (no command or action)
 	req := protocol.Request{Command: ""}
 	data, _ := json.Marshal(req)
 	data = append(data, '\n')
@@ -158,7 +172,7 @@ func TestHandleConnection_EmptyCommand(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		handleConnection(context.Background(), serverConn, creds, logger, 0)
+		handleConnection(context.Background(), serverConn, creds, srv, logger, 0)
 		close(done)
 	}()
 
@@ -171,8 +185,8 @@ func TestHandleConnection_EmptyCommand(t *testing.T) {
 		if resp.Type != protocol.TypeError {
 			t.Errorf("expected error response, got %q", resp.Type)
 		}
-		if !strings.Contains(resp.Message, "empty command") {
-			t.Errorf("expected empty command error, got %q", resp.Message)
+		if !strings.Contains(resp.Message, "command or action") {
+			t.Errorf("expected 'command or action' error, got %q", resp.Message)
 		}
 	}
 
@@ -185,6 +199,7 @@ func TestHandleConnection_Stderr(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	creds := &PeerCredentials{UID: uint32(os.Getuid()), PID: int32(os.Getpid())}
+	srv := testServer(t, logger)
 
 	req := protocol.Request{Command: "echo err >&2"}
 	data, _ := json.Marshal(req)
@@ -193,7 +208,7 @@ func TestHandleConnection_Stderr(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		handleConnection(context.Background(), serverConn, creds, logger, 0)
+		handleConnection(context.Background(), serverConn, creds, srv, logger, 0)
 		close(done)
 	}()
 
@@ -224,4 +239,119 @@ func TestHandleConnection_Stderr(t *testing.T) {
 	if !hasStderr {
 		t.Error("expected stderr response")
 	}
+}
+
+func TestHandleConnection_VersionAction(t *testing.T) {
+	serverConn, clientConn, cleanup := setupTestSocket(t)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	creds := &PeerCredentials{UID: uint32(os.Getuid()), PID: int32(os.Getpid())}
+	srv := testServer(t, logger)
+
+	// Send version action request
+	req := protocol.Request{Action: "version"}
+	data, _ := json.Marshal(req)
+	data = append(data, '\n')
+	clientConn.Write(data)
+
+	done := make(chan struct{})
+	go func() {
+		handleConnection(context.Background(), serverConn, creds, srv, logger, 0)
+		close(done)
+	}()
+
+	scanner := bufio.NewScanner(clientConn)
+	if scanner.Scan() {
+		var resp protocol.Response
+		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		if resp.Type != protocol.TypeVersion {
+			t.Errorf("expected version response, got %q", resp.Type)
+		}
+		if resp.CurrentVersion != "test-version" {
+			t.Errorf("expected version 'test-version', got %q", resp.CurrentVersion)
+		}
+	}
+
+	<-done
+}
+
+func TestHandleConnection_CheckUpdateAction_NoBinaryPath(t *testing.T) {
+	serverConn, clientConn, cleanup := setupTestSocket(t)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	creds := &PeerCredentials{UID: uint32(os.Getuid()), PID: int32(os.Getpid())}
+	// Server without binary path configured
+	cfg := &config.Config{MaxConnections: 10}
+	srv := New(cfg, logger, WithVersion("test-version"))
+
+	// Send check-update action request
+	req := protocol.Request{Action: "check-update"}
+	data, _ := json.Marshal(req)
+	data = append(data, '\n')
+	clientConn.Write(data)
+
+	done := make(chan struct{})
+	go func() {
+		handleConnection(context.Background(), serverConn, creds, srv, logger, 0)
+		close(done)
+	}()
+
+	scanner := bufio.NewScanner(clientConn)
+	if scanner.Scan() {
+		var resp protocol.Response
+		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		if resp.Type != protocol.TypeUpdate {
+			t.Errorf("expected update response, got %q", resp.Type)
+		}
+		if resp.UpdateStatus != protocol.UpdateStatusFailed {
+			t.Errorf("expected failed status, got %q", resp.UpdateStatus)
+		}
+		if !strings.Contains(resp.Message, "binary path not configured") {
+			t.Errorf("expected 'binary path not configured' message, got %q", resp.Message)
+		}
+	}
+
+	<-done
+}
+
+func TestHandleConnection_UnknownAction(t *testing.T) {
+	serverConn, clientConn, cleanup := setupTestSocket(t)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	creds := &PeerCredentials{UID: uint32(os.Getuid()), PID: int32(os.Getpid())}
+	srv := testServer(t, logger)
+
+	// Send unknown action - this should be caught by protocol validation
+	// but let's test the handler dispatch too
+	data := []byte(`{"action":"unknown-action"}` + "\n")
+	clientConn.Write(data)
+
+	done := make(chan struct{})
+	go func() {
+		handleConnection(context.Background(), serverConn, creds, srv, logger, 0)
+		close(done)
+	}()
+
+	scanner := bufio.NewScanner(clientConn)
+	if scanner.Scan() {
+		var resp protocol.Response
+		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		if resp.Type != protocol.TypeError {
+			t.Errorf("expected error response, got %q", resp.Type)
+		}
+		if !strings.Contains(resp.Message, "unknown action") {
+			t.Errorf("expected 'unknown action' error, got %q", resp.Message)
+		}
+	}
+
+	<-done
 }

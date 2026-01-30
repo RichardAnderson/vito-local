@@ -43,8 +43,19 @@ func main() {
 	cfg.MaxExecTimeout = *maxExecTimeout
 	cfg.MaxConnections = *maxConnections
 
-	// Create and start server
-	srv := server.New(cfg, logger)
+	// Get the path to our own binary for self-update
+	binaryPath, err := os.Executable()
+	if err != nil {
+		logger.Warn("failed to get executable path, self-update will be disabled",
+			slog.String("error", err.Error()))
+		binaryPath = ""
+	}
+
+	// Create and start server with version and binary path for self-update
+	srv := server.New(cfg, logger,
+		server.WithVersion(version),
+		server.WithBinaryPath(binaryPath),
+	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -56,9 +67,16 @@ func main() {
 
 	logger.Info("server running", slog.String("version", version))
 
-	// Wait for shutdown signal
-	<-ctx.Done()
-	logger.Info("received shutdown signal")
+	// Wait for shutdown signal or restart request
+	var restartRequested bool
+	select {
+	case <-ctx.Done():
+		logger.Info("received shutdown signal")
+	case <-srv.RestartChan():
+		logger.Info("restart requested for update")
+		restartRequested = true
+		stop() // Cancel the signal context
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -66,6 +84,12 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", slog.String("error", err.Error()))
 		os.Exit(1)
+	}
+
+	if restartRequested {
+		logger.Info("server stopped for restart, exiting with code 0 for systemd restart")
+		// Exit with code 0 so systemd will restart us with the new binary
+		os.Exit(0)
 	}
 
 	logger.Info("server stopped")

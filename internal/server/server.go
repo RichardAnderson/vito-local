@@ -23,19 +23,68 @@ type Server struct {
 	wg            sync.WaitGroup
 	systemdSocket bool
 	connSem       chan struct{}
+	version       string
+	binaryPath    string
+	restartChan   chan struct{}
+}
+
+// Option is a functional option for configuring the server.
+type Option func(*Server)
+
+// WithVersion sets the current version of the service.
+func WithVersion(version string) Option {
+	return func(s *Server) {
+		s.version = version
+	}
+}
+
+// WithBinaryPath sets the path to the service binary.
+func WithBinaryPath(binaryPath string) Option {
+	return func(s *Server) {
+		s.binaryPath = binaryPath
+	}
 }
 
 // New creates a new Server with the given configuration and logger.
-func New(cfg *config.Config, logger *slog.Logger) *Server {
+func New(cfg *config.Config, logger *slog.Logger, opts ...Option) *Server {
 	maxConn := cfg.MaxConnections
 	if maxConn <= 0 {
 		maxConn = 100
 	}
-	return &Server{
-		cfg:     cfg,
-		logger:  logger,
-		connSem: make(chan struct{}, maxConn),
+	s := &Server{
+		cfg:         cfg,
+		logger:      logger,
+		connSem:     make(chan struct{}, maxConn),
+		restartChan: make(chan struct{}, 1),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// RestartChan returns the channel that signals a restart request.
+func (s *Server) RestartChan() <-chan struct{} {
+	return s.restartChan
+}
+
+// RequestRestart signals that the server should restart.
+func (s *Server) RequestRestart() {
+	select {
+	case s.restartChan <- struct{}{}:
+	default:
+		// Already a restart pending
+	}
+}
+
+// Version returns the current version of the service.
+func (s *Server) Version() string {
+	return s.version
+}
+
+// BinaryPath returns the path to the service binary.
+func (s *Server) BinaryPath() string {
+	return s.binaryPath
 }
 
 // Start begins listening for connections and handling them.
@@ -192,7 +241,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			go func() {
 				defer func() { <-s.connSem }()
 				defer s.wg.Done()
-				handleConnection(ctx, conn, creds, s.logger, s.cfg.MaxExecTimeout)
+				handleConnection(ctx, conn, creds, s, s.logger, s.cfg.MaxExecTimeout)
 			}()
 		default:
 			s.logger.Warn("max connections reached, rejecting",

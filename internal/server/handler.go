@@ -11,6 +11,7 @@ import (
 
 	"vito-local/internal/executor"
 	"vito-local/internal/protocol"
+	"vito-local/internal/updater"
 )
 
 // blockedEnvVars are environment variable names that clients may not set.
@@ -51,7 +52,7 @@ func isBlockedEnvVar(key string) bool {
 	return false
 }
 
-func handleConnection(ctx context.Context, conn *net.UnixConn, creds *PeerCredentials, logger *slog.Logger, maxExecTimeout time.Duration) {
+func handleConnection(ctx context.Context, conn *net.UnixConn, creds *PeerCredentials, srv *Server, logger *slog.Logger, maxExecTimeout time.Duration) {
 	defer conn.Close()
 
 	connLog := logger.With(
@@ -66,6 +67,14 @@ func handleConnection(ctx context.Context, conn *net.UnixConn, creds *PeerCreden
 		if writeErr != nil {
 			connLog.Error("failed to write error response", slog.String("error", writeErr.Error()))
 		}
+		return
+	}
+
+	// Route based on Action vs Command
+	if req.Action != "" {
+		connLog = connLog.With(slog.String("action", req.Action))
+		connLog.Info("handling action")
+		handleAction(ctx, conn, req, srv, connLog)
 		return
 	}
 
@@ -131,4 +140,114 @@ func handleConnection(ctx context.Context, conn *net.UnixConn, creds *PeerCreden
 
 	writeResponse(protocol.ExitResponse(exitCode))
 	connLog.Info("command completed", slog.Int("exit_code", exitCode))
+}
+
+// handleAction dispatches action requests to the appropriate handler.
+func handleAction(ctx context.Context, conn *net.UnixConn, req *protocol.Request, srv *Server, logger *slog.Logger) {
+	writeResponse := func(resp protocol.Response) {
+		if err := protocol.WriteResponse(conn, resp); err != nil {
+			logger.Warn("write failed (client disconnected?)", slog.String("error", err.Error()))
+		}
+	}
+
+	switch req.Action {
+	case "version":
+		handleVersion(srv, writeResponse, logger)
+	case "check-update":
+		handleCheckUpdate(srv, writeResponse, logger)
+	case "update":
+		handleUpdate(ctx, srv, writeResponse, logger)
+	default:
+		writeResponse(protocol.ErrorResponse("unknown action: " + req.Action))
+	}
+}
+
+// handleVersion returns the current version.
+func handleVersion(srv *Server, writeResponse func(protocol.Response), logger *slog.Logger) {
+	logger.Info("returning version", slog.String("version", srv.Version()))
+	writeResponse(protocol.VersionResponse(srv.Version()))
+}
+
+// handleCheckUpdate checks if an update is available without performing it.
+func handleCheckUpdate(srv *Server, writeResponse func(protocol.Response), logger *slog.Logger) {
+	if srv.BinaryPath() == "" {
+		writeResponse(protocol.UpdateResponse(
+			protocol.UpdateStatusFailed,
+			srv.Version(), "",
+			"update not supported: binary path not configured",
+		))
+		return
+	}
+
+	u := updater.New(srv.Version(), srv.BinaryPath())
+	result, err := u.CheckUpdate()
+	if err != nil {
+		logger.Error("check update failed", slog.String("error", err.Error()))
+	}
+
+	writeResponse(protocol.UpdateResponse(
+		protocol.UpdateStatus(result.Status),
+		result.CurrentVersion,
+		result.LatestVersion,
+		result.Message,
+	))
+}
+
+// restartDelay is the time to wait after sending the restart response before triggering restart.
+const restartDelay = 500 * time.Millisecond
+
+// handleUpdate performs the update and schedules a restart.
+func handleUpdate(ctx context.Context, srv *Server, writeResponse func(protocol.Response), logger *slog.Logger) {
+	if srv.BinaryPath() == "" {
+		writeResponse(protocol.UpdateResponse(
+			protocol.UpdateStatusFailed,
+			srv.Version(), "",
+			"update not supported: binary path not configured",
+		))
+		return
+	}
+
+	u := updater.New(srv.Version(), srv.BinaryPath())
+
+	// Progress callback to send status updates
+	onProgress := func(status, message string) {
+		writeResponse(protocol.UpdateResponse(
+			protocol.UpdateStatus(status),
+			srv.Version(),
+			"", // We don't know latest version in progress callbacks
+			message,
+		))
+	}
+
+	result, err := u.PerformUpdate(ctx, onProgress)
+	if err != nil {
+		logger.Error("update failed", slog.String("error", err.Error()))
+		// Error response already sent via onProgress
+		return
+	}
+
+	// If we're already current, just return
+	if result.Status == "current" {
+		logger.Info("already running latest version")
+		return
+	}
+
+	// Update applied successfully, send restarting status
+	logger.Info("update applied, scheduling restart",
+		slog.String("from_version", result.CurrentVersion),
+		slog.String("to_version", result.LatestVersion),
+	)
+
+	writeResponse(protocol.UpdateResponse(
+		protocol.UpdateStatusRestarting,
+		result.CurrentVersion,
+		result.LatestVersion,
+		"service will restart momentarily",
+	))
+
+	// Give time for the response to be sent
+	time.Sleep(restartDelay)
+
+	// Signal restart
+	srv.RequestRestart()
 }

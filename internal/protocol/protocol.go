@@ -12,7 +12,8 @@ const MaxRequestSize = 10 << 20
 
 // Request represents a command execution request from a client.
 type Request struct {
-	Command string            `json:"command"`
+	Command string            `json:"command,omitempty"`
+	Action  string            `json:"action,omitempty"` // "update", "check-update", "version"
 	Env     map[string]string `json:"env,omitempty"`
 	Cwd     string            `json:"cwd,omitempty"`
 }
@@ -21,18 +22,35 @@ type Request struct {
 type ResponseType string
 
 const (
-	TypeStdout ResponseType = "stdout"
-	TypeStderr ResponseType = "stderr"
-	TypeExit   ResponseType = "exit"
-	TypeError  ResponseType = "error"
+	TypeStdout  ResponseType = "stdout"
+	TypeStderr  ResponseType = "stderr"
+	TypeExit    ResponseType = "exit"
+	TypeError   ResponseType = "error"
+	TypeUpdate  ResponseType = "update"
+	TypeVersion ResponseType = "version"
+)
+
+// UpdateStatus identifies the status of an update operation.
+type UpdateStatus string
+
+const (
+	UpdateStatusCurrent     UpdateStatus = "current"
+	UpdateStatusAvailable   UpdateStatus = "available"
+	UpdateStatusDownloading UpdateStatus = "downloading"
+	UpdateStatusApplied     UpdateStatus = "applied"
+	UpdateStatusRestarting  UpdateStatus = "restarting"
+	UpdateStatusFailed      UpdateStatus = "failed"
 )
 
 // Response represents a single line of output sent back to the client.
 type Response struct {
-	Type    ResponseType `json:"type"`
-	Data    string       `json:"data,omitempty"`
-	Code    *int         `json:"code,omitempty"`
-	Message string       `json:"message,omitempty"`
+	Type           ResponseType `json:"type"`
+	Data           string       `json:"data,omitempty"`
+	Code           *int         `json:"code,omitempty"`
+	Message        string       `json:"message,omitempty"`
+	UpdateStatus   UpdateStatus `json:"update_status,omitempty"`
+	CurrentVersion string       `json:"current_version,omitempty"`
+	LatestVersion  string       `json:"latest_version,omitempty"`
 }
 
 // StdoutResponse creates a response for a line of stdout output.
@@ -55,6 +73,25 @@ func ErrorResponse(message string) Response {
 	return Response{Type: TypeError, Message: message}
 }
 
+// UpdateResponse creates a response for update status updates.
+func UpdateResponse(status UpdateStatus, currentVersion, latestVersion, message string) Response {
+	return Response{
+		Type:           TypeUpdate,
+		UpdateStatus:   status,
+		CurrentVersion: currentVersion,
+		LatestVersion:  latestVersion,
+		Message:        message,
+	}
+}
+
+// VersionResponse creates a response with the current version.
+func VersionResponse(currentVersion string) Response {
+	return Response{
+		Type:           TypeVersion,
+		CurrentVersion: currentVersion,
+	}
+}
+
 // ParseRequest reads a single newline-delimited JSON request from the reader.
 // The request is limited to MaxRequestSize bytes to prevent memory exhaustion.
 func ParseRequest(reader io.Reader) (*Request, error) {
@@ -74,8 +111,19 @@ func ParseRequest(reader io.Reader) (*Request, error) {
 		return nil, fmt.Errorf("parsing request JSON: %w", err)
 	}
 
-	if req.Command == "" {
-		return nil, fmt.Errorf("empty command in request")
+	// Validate: must have either Command or Action, but not both empty
+	if req.Command == "" && req.Action == "" {
+		return nil, fmt.Errorf("request must have either command or action")
+	}
+
+	// Validate Action if provided
+	if req.Action != "" {
+		switch req.Action {
+		case "update", "check-update", "version":
+			// valid actions
+		default:
+			return nil, fmt.Errorf("unknown action: %s", req.Action)
+		}
 	}
 
 	return &req, nil

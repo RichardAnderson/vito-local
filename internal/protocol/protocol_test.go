@@ -49,14 +49,14 @@ func TestParseRequest_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestParseRequest_EmptyCommand(t *testing.T) {
+func TestParseRequest_EmptyCommandAndAction(t *testing.T) {
 	input := `{"command":""}` + "\n"
 	_, err := ParseRequest(strings.NewReader(input))
 	if err == nil {
-		t.Fatal("expected error for empty command")
+		t.Fatal("expected error for empty command and action")
 	}
-	if !strings.Contains(err.Error(), "empty command") {
-		t.Errorf("expected empty command error, got: %v", err)
+	if !strings.Contains(err.Error(), "command or action") {
+		t.Errorf("expected 'command or action' error, got: %v", err)
 	}
 }
 
@@ -218,5 +218,86 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if parsed.Cwd != req.Cwd {
 		t.Errorf("cwd mismatch")
+	}
+}
+
+func TestParseRequest_ActionValid(t *testing.T) {
+	tests := []struct {
+		action string
+	}{
+		{"version"},
+		{"check-update"},
+		{"update"},
+	}
+
+	for _, tc := range tests {
+		input := `{"action":"` + tc.action + `"}` + "\n"
+		req, err := ParseRequest(strings.NewReader(input))
+		if err != nil {
+			t.Errorf("unexpected error for action %q: %v", tc.action, err)
+			continue
+		}
+		if req.Action != tc.action {
+			t.Errorf("expected action %q, got %q", tc.action, req.Action)
+		}
+	}
+}
+
+func TestParseRequest_ActionInvalid(t *testing.T) {
+	input := `{"action":"invalid-action"}` + "\n"
+	_, err := ParseRequest(strings.NewReader(input))
+	if err == nil {
+		t.Fatal("expected error for invalid action")
+	}
+	if !strings.Contains(err.Error(), "unknown action") {
+		t.Errorf("expected 'unknown action' error, got: %v", err)
+	}
+}
+
+func TestWriteResponse_Update(t *testing.T) {
+	var buf bytes.Buffer
+	resp := UpdateResponse(UpdateStatusAvailable, "v0.1.0", "v0.2.0", "update available")
+
+	err := WriteResponse(&buf, resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var decoded Response
+	if err := json.Unmarshal(bytes.TrimRight(buf.Bytes(), "\n"), &decoded); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if decoded.Type != TypeUpdate {
+		t.Errorf("expected type update, got %q", decoded.Type)
+	}
+	if decoded.UpdateStatus != UpdateStatusAvailable {
+		t.Errorf("expected status available, got %q", decoded.UpdateStatus)
+	}
+	if decoded.CurrentVersion != "v0.1.0" {
+		t.Errorf("expected current version v0.1.0, got %q", decoded.CurrentVersion)
+	}
+	if decoded.LatestVersion != "v0.2.0" {
+		t.Errorf("expected latest version v0.2.0, got %q", decoded.LatestVersion)
+	}
+}
+
+func TestWriteResponse_Version(t *testing.T) {
+	var buf bytes.Buffer
+	resp := VersionResponse("v1.2.3")
+
+	err := WriteResponse(&buf, resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var decoded Response
+	if err := json.Unmarshal(bytes.TrimRight(buf.Bytes(), "\n"), &decoded); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if decoded.Type != TypeVersion {
+		t.Errorf("expected type version, got %q", decoded.Type)
+	}
+	if decoded.CurrentVersion != "v1.2.3" {
+		t.Errorf("expected version v1.2.3, got %q", decoded.CurrentVersion)
 	}
 }
