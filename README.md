@@ -203,6 +203,67 @@ while ($line = fgets($sock)) {
 fclose($sock);
 ```
 
+### Version Endpoint
+
+Get the current service version:
+
+```php
+$sock = stream_socket_client('unix:///run/vito-root.sock', $errno, $errstr, 5);
+fwrite($sock, json_encode(['action' => 'version']) . "\n");
+
+$line = fgets($sock);
+$msg = json_decode(trim($line), true);
+
+if ($msg['type'] === 'version') {
+    echo "Current version: " . $msg['current_version'];
+}
+fclose($sock);
+```
+
+### Update Endpoints
+
+Check if an update is available:
+
+```php
+$sock = stream_socket_client('unix:///run/vito-root.sock', $errno, $errstr, 5);
+fwrite($sock, json_encode(['action' => 'check-update']) . "\n");
+
+$line = fgets($sock);
+$msg = json_decode(trim($line), true);
+
+if ($msg['type'] === 'update') {
+    match ($msg['update_status']) {
+        'current'   => echo "Already up to date: " . $msg['current_version'],
+        'available' => echo "Update available: " . $msg['current_version'] . " → " . $msg['latest_version'],
+        'failed'    => echo "Check failed: " . $msg['message'],
+    };
+}
+fclose($sock);
+```
+
+Perform an update (downloads, installs, and restarts the service):
+
+```php
+$sock = stream_socket_client('unix:///run/vito-root.sock', $errno, $errstr, 5);
+fwrite($sock, json_encode(['action' => 'update']) . "\n");
+
+while ($line = fgets($sock)) {
+    $msg = json_decode(trim($line), true);
+    if ($msg['type'] !== 'update') continue;
+
+    match ($msg['update_status']) {
+        'current'     => echo "Already up to date\n",
+        'downloading' => echo "Downloading " . $msg['latest_version'] . "...\n",
+        'applied'     => echo "Update applied\n",
+        'restarting'  => echo "Service restarting...\n",
+        'failed'      => echo "Update failed: " . $msg['message'] . "\n",
+    };
+
+    if (in_array($msg['update_status'], ['current', 'restarting', 'failed'])) break;
+}
+fclose($sock);
+```
+
 ## Security
 
 This service runs as root and executes arbitrary shell commands. Its security model relies on multiple layers:
