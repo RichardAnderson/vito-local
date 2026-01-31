@@ -264,6 +264,75 @@ while ($line = fgets($sock)) {
 fclose($sock);
 ```
 
+## Docker Usage
+
+When running VitoDeploy in a Docker container, you need to map the container's user to the `vito` user on the host so `SO_PEERCRED` authentication works correctly.
+
+### Setup
+
+1. **Create the `vito` user on the host** (if not already present):
+
+```bash
+sudo useradd --system --no-create-home vito
+```
+
+2. **Install the service** (defaults to `vito` user):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RichardAnderson/vito-local/main/scripts/install.sh | sudo bash
+```
+
+3. **Get the `vito` user's UID and GID**:
+
+```bash
+id vito
+# Example output: uid=998(vito) gid=998(vito) groups=998(vito)
+```
+
+4. **Run the container as the `vito` UID**, mounting the socket:
+
+```bash
+docker run \
+  --user 998:998 \
+  -v /run/vito-root.sock:/run/vito-root.sock \
+  your-vito-image
+```
+
+Or in `docker-compose.yml`:
+
+```yaml
+services:
+  vito:
+    image: your-vito-image
+    user: "998:998"
+    volumes:
+      - /run/vito-root.sock:/run/vito-root.sock
+```
+
+### Why This Works
+
+The `SO_PEERCRED` authentication mechanism operates at the kernel level using UIDs, not usernames. When the container process (running as UID 998) connects to the socket, the kernel reports UID 998 to the service — which matches the allowed `vito` user.
+
+**Important:** The container runs as the `vito` UID, not as `www-data` or any other user. If your application expects to run as `www-data` inside the container, you'll need to adjust file permissions or run a process supervisor that handles the UID difference.
+
+### File Permissions Inside the Container
+
+If your application writes files, ensure the container's filesystem is writable by the `vito` UID:
+
+```dockerfile
+# In your Dockerfile
+ARG VITO_UID=998
+ARG VITO_GID=998
+
+RUN chown -R ${VITO_UID}:${VITO_GID} /var/www
+```
+
+Build with the correct UID:
+
+```bash
+docker build --build-arg VITO_UID=$(id -u vito) --build-arg VITO_GID=$(id -g vito) .
+```
+
 ## Security
 
 This service runs as root and executes arbitrary shell commands. Its security model relies on multiple layers:

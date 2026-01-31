@@ -5,7 +5,7 @@ REPO="RichardAnderson/vito-local"
 BINARY_NAME="vito-root-service"
 INSTALL_DIR="/usr/local/bin"
 SYSTEMD_DIR="/etc/systemd/system"
-SERVICE_USER="${VITO_USER:-root}"
+SERVICE_USER="${VITO_USER:-vito}"
 
 # Check root
 if [[ $EUID -ne 0 ]]; then
@@ -89,9 +89,9 @@ install -m 0644 "$TMPDIR/systemd/vito-root.socket" "$SYSTEMD_DIR/"
 install -m 0644 "$TMPDIR/systemd/vito-root.service" "$SYSTEMD_DIR/"
 
 # Update service files with correct user if not default
-if [[ "$SERVICE_USER" != "root" ]]; then
-    sed -i "s/-user root/-user $SERVICE_USER/" "$SYSTEMD_DIR/vito-root.service"
-    sed -i "s/SocketGroup=root/SocketGroup=$SERVICE_USER/" "$SYSTEMD_DIR/vito-root.socket"
+if [[ "$SERVICE_USER" != "vito" ]]; then
+    sed -i "s/-user vito/-user $SERVICE_USER/" "$SYSTEMD_DIR/vito-root.service"
+    sed -i "s/SocketGroup=vito/SocketGroup=$SERVICE_USER/" "$SYSTEMD_DIR/vito-root.socket"
 fi
 
 # Reload and enable

@@ -6,7 +6,7 @@ Requires=vito-root.socket
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/vito-root-service -user root -log-json
+ExecStart=/usr/local/bin/vito-root-service -user vito -log-json
 Restart=on-failure
 RestartSec=5
 KillMode=mixed
